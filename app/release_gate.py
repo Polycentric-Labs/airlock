@@ -19,6 +19,7 @@ CLI:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,8 @@ from pathlib import Path
 POLICY_PATH = Path(__file__).resolve().parent.parent / "gate" / "policy.json"
 
 RISK_TIERS = ("standard", "elevated", "high")
+
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 
 @dataclass
@@ -76,15 +79,27 @@ def evaluate(manifest: dict, policy: dict | None = None) -> Verdict:
             reasons.append(f"{why} (got '{value}')")
 
     count, err = _require(manifest, "evidence.tests.count")
-    if not err and isinstance(count, int) and count < policy["minimum_test_count"]:
+    if err:
+        reasons.append(err)
+    # Fail closed on type confusion: a count of "999" (string) or True
+    # (bool is an int subclass) must not slip past the floor check.
+    elif not isinstance(count, int) or isinstance(count, bool):
+        reasons.append(f"test count must be an integer, got {type(count).__name__}")
+    elif count < policy["minimum_test_count"]:
         reasons.append(
             f"test count {count} is below the policy minimum {policy['minimum_test_count']}"
         )
 
-    # Artifact integrity: digest present, and SBOM + provenance bound to it.
+    # Artifact integrity: a well-formed digest, and SBOM + provenance bound
+    # to it. "Well-formed" matters: an empty or garbage digest must not
+    # quietly disable the binding comparison below.
     digest, err = _require(manifest, "artifact.sha256")
     if err:
         reasons.append(err)
+        digest = None
+    elif not (isinstance(digest, str) and _SHA256_RE.fullmatch(digest)):
+        reasons.append("artifact.sha256 must be a 64-character lowercase hex sha256")
+        digest = None
     sbom_present, err = _require(manifest, "evidence.sbom.present")
     if err or sbom_present is not True:
         reasons.append("CycloneDX SBOM must be present for the exact artifact")
@@ -92,17 +107,26 @@ def evaluate(manifest: dict, policy: dict | None = None) -> Verdict:
     if err or prov_verified is not True:
         reasons.append("provenance statement must verify against the artifact digest")
     prov_subject, err = _require(manifest, "evidence.provenance.subject_sha256")
-    if not err and digest and prov_subject != digest:
+    if err:
+        reasons.append(err)
+    elif not (isinstance(prov_subject, str) and _SHA256_RE.fullmatch(prov_subject)):
+        reasons.append("provenance.subject_sha256 must be a 64-character lowercase hex sha256")
+    elif digest is not None and prov_subject != digest:
         reasons.append("provenance subject digest does not match the artifact digest")
 
-    # Tier-scaled human approval.
+    # Tier-scaled human approval. An approval only counts if it is a distinct,
+    # non-empty name: ['', ''] and ['a', 'a'] are one sock puppet, not two people.
     if tier in ("elevated", "high"):
         approvals, err = _require(manifest, "change.approvals")
         needed = policy["approvals_required"][tier]
-        got = len(approvals) if isinstance(approvals, list) else 0
+        if isinstance(approvals, list):
+            distinct = {a.strip().lower() for a in approvals if isinstance(a, str) and a.strip()}
+            got = len(distinct)
+        else:
+            got = 0
         if err or got < needed:
             reasons.append(
-                f"risk tier '{tier}' requires {needed} named human approval(s), found {got}"
+                f"risk tier '{tier}' requires {needed} distinct named human approval(s), found {got}"
             )
 
     return Verdict("block", reasons) if reasons else Verdict("promote")

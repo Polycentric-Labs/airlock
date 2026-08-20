@@ -61,6 +61,10 @@ SECRET_SHAPES = tuple(
         r"AKIA[0-9A-Z]{16}",                      # AWS access key id
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----",    # PEM private key
         r"(?i)bearer\s+[a-z0-9\-_\.=]{20,}",      # bearer token
+        r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}",  # GitHub token
+        r"\bgithub_pat_[A-Za-z0-9_]{22,}",        # GitHub fine-grained PAT
+        r"\bsk-[A-Za-z0-9_-]{20,}",               # OpenAI-style API key
+        r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}",  # JWT
         r"\b\d{3}-\d{2}-\d{4}\b",                 # SSN shape
     )
 )
@@ -93,22 +97,25 @@ def check_data_class(declared: str) -> GateResult:
 
 
 def check_injection(*texts: str) -> GateResult:
-    result = GateResult(Decision.PROCEED)
-    for text in texts:
+    # Scan each text AND their concatenation: retrieved chunks concatenate in
+    # a real prompt, so a pattern split across two chunks must still trip.
+    candidates = list(texts)
+    if len(texts) > 1:
+        candidates.append(" ".join(texts))
+    for text in candidates:
         for pat in INJECTION_PATTERNS:
             if pat.search(text):
-                result = GateResult(
+                return GateResult(
                     Decision.BLOCK,
                     [f"injection tripwire matched: /{pat.pattern}/"],
                 )
-                return result
         for pat in SECRET_SHAPES:
             if pat.search(text):
                 return GateResult(
                     Decision.BLOCK,
                     ["request contains a credential- or PII-shaped string; refusing to process it"],
                 )
-    return result
+    return GateResult(Decision.PROCEED)
 
 
 def check_tool_calls(tool_calls: list[str]) -> GateResult:
@@ -121,16 +128,30 @@ def check_tool_calls(tool_calls: list[str]) -> GateResult:
     return GateResult(Decision.PROCEED)
 
 
-def evaluate(
-    request_text: str,
-    declared_class: str,
+def evaluate_input(*request_fields: str, declared_class: str) -> GateResult:
+    """Pre-draft gate: run on every request field BEFORE any model runs.
+
+    A request that fails here never reaches the drafter at all, so a blocked
+    request costs no model tokens and causes no side effects. Every
+    caller-controlled field belongs in request_fields, not just the obvious
+    one; a gate that only reads the 'topic' invites smuggling via 'audience'.
+    """
+    checks = [check_data_class(declared_class), check_injection(*request_fields)]
+    decision = Decision.PROCEED
+    reasons: list[str] = []
+    for c in checks:
+        decision = _worst(decision, c.decision)
+        reasons.extend(c.reasons)
+    return GateResult(decision, reasons)
+
+
+def evaluate_output(
     retrieved_texts: list[str] | None = None,
     tool_calls: list[str] | None = None,
 ) -> GateResult:
-    """Combine all checks; the worst individual outcome is the decision."""
+    """Post-draft gate: what the drafter retrieved and which tools it called."""
     checks = [
-        check_data_class(declared_class),
-        check_injection(request_text, *(retrieved_texts or [])),
+        check_injection(*(retrieved_texts or [])),
         check_tool_calls(tool_calls or []),
     ]
     decision = Decision.PROCEED
@@ -139,3 +160,20 @@ def evaluate(
         decision = _worst(decision, c.decision)
         reasons.extend(c.reasons)
     return GateResult(decision, reasons)
+
+
+def evaluate(
+    request_text: str,
+    declared_class: str,
+    retrieved_texts: list[str] | None = None,
+    tool_calls: list[str] | None = None,
+) -> GateResult:
+    """Combine all checks; the worst individual outcome is the decision.
+
+    Convenience wrapper over evaluate_input + evaluate_output for tests and
+    single-shot callers. Serving paths should call the two stages separately
+    so blocked input never reaches the model (see function_app.py).
+    """
+    a = evaluate_input(request_text, declared_class=declared_class)
+    b = evaluate_output(retrieved_texts, tool_calls)
+    return GateResult(_worst(a.decision, b.decision), a.reasons + b.reasons)

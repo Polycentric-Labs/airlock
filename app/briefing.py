@@ -49,7 +49,12 @@ def corpus_search(query: str) -> list[Path]:
 
 def corpus_read(doc: Path) -> str:
     resolved = doc.resolve()
-    if resolved.parent != CORPUS_DIR or resolved.suffix != ".md":
+    # Compare via normcase so Windows case-insensitivity ("CORPUS", ".MD")
+    # cannot slip a path or extension past the boundary check.
+    import os
+
+    same_dir = os.path.normcase(str(resolved.parent)) == os.path.normcase(str(CORPUS_DIR))
+    if not same_dir or resolved.suffix.lower() != ".md":
         raise PermissionError(f"corpus.read outside corpus dir: {doc}")
     return resolved.read_text(encoding="utf-8")
 

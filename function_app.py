@@ -40,9 +40,18 @@ if func is not None:  # pragma: no cover - exercised only inside Azure Functions
         audience = str(payload.get("audience", "internal staff"))[:100]
         declared_class = str(payload.get("data_class", "internal"))
 
-        draft = briefing.draft_briefing(topic, audience)
-        retrieved = [briefing.corpus_read(briefing.CORPUS_DIR / c) for c in draft.citations]
-        result = policy_gate.evaluate(topic, declared_class, retrieved, draft.tool_calls)
+        # Stage 1: gate EVERY caller-controlled field before the model runs.
+        # A blocked request never reaches the drafter: no tokens, no side
+        # effects, and no smuggling via secondary fields like 'audience'.
+        result = policy_gate.evaluate_input(topic, audience, declared_class=declared_class)
+        if result.decision is not policy_gate.Decision.BLOCK:
+            draft = briefing.draft_briefing(topic, audience)
+            retrieved = [briefing.corpus_read(briefing.CORPUS_DIR / c) for c in draft.citations]
+            # Stage 2: gate what actually happened - retrieved content and
+            # the tools the drafter invoked. Worst decision wins.
+            post = policy_gate.evaluate_output(retrieved, draft.tool_calls)
+            worst = max(result.decision, post.decision)
+            result = policy_gate.GateResult(worst, result.reasons + post.reasons)
 
         # Telemetry: request id + content hashes + decision. Never content.
         logging.info(

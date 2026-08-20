@@ -55,7 +55,7 @@ def test_rejection_4_high_tier_without_approvals_blocks():
     m["change"]["approvals"] = ["one.person"]
     v = release_gate.evaluate(m)
     assert v.decision == "block"
-    assert any("2 named human approval" in r for r in v.reasons)
+    assert any("2 distinct named human approval" in r for r in v.reasons)
 
 
 # --- Fail-closed edges ----------------------------------------------------
