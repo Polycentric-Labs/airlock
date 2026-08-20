@@ -1,0 +1,18 @@
+# Gitleaks configuration for Airlock.
+#
+# Default ruleset stays fully on. The single allowlist below covers the two
+# test files that contain deliberately secret-SHAPED fixtures (a truncated
+# fake PEM stub and AWS's own documented example key id) used to prove the
+# redaction scrubber and the policy gate refuse such input. Allowlisting is
+# scoped to those paths only; a real credential anywhere else in the repo,
+# including these files' history, still fails the scan.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Secret-shaped test fixtures for the redaction/policy-gate tests; not credentials."
+paths = [
+  '''tests/test_redaction\.py''',
+  '''tests/test_policy_gate\.py''',
+]
