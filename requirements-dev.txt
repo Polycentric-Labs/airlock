@@ -1,0 +1,7 @@
+# Development and CI tooling only. The application itself has ZERO runtime
+# dependencies (Python stdlib), which is a deliberate supply-chain decision:
+# the SBOM for the artifact is short, and the dependency audit has almost
+# nothing to audit. requirements-azure.txt exists solely for the Functions host.
+pytest>=8.0
+bandit>=1.7
+pip-audit>=2.7

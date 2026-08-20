@@ -1,0 +1,14 @@
+{
+  "$comment": "Artifact was modified after provenance was recorded: subject digest no longer matches. Expect BLOCK.",
+  "artifact": { "name": "airlock-app.zip", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  "source": { "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+  "change": { "risk_tier": "standard", "approvals": [] },
+  "evidence": {
+    "tests": { "result": "pass", "count": 30 },
+    "secret_scan": { "result": "pass" },
+    "sast": { "result": "pass" },
+    "dependency_audit": { "result": "pass" },
+    "sbom": { "present": true },
+    "provenance": { "verified": true, "subject_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+  }
+}

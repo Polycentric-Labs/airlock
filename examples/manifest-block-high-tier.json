@@ -1,0 +1,14 @@
+{
+  "$comment": "A change to the gate itself (high tier) with only one approver. Expect BLOCK: high requires two named humans.",
+  "artifact": { "name": "airlock-app.zip", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  "source": { "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+  "change": { "risk_tier": "high", "approvals": ["security.lead"] },
+  "evidence": {
+    "tests": { "result": "pass", "count": 30 },
+    "secret_scan": { "result": "pass" },
+    "sast": { "result": "pass" },
+    "dependency_audit": { "result": "pass" },
+    "sbom": { "present": true },
+    "provenance": { "verified": true, "subject_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+  }
+}

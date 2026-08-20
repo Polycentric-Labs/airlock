@@ -1,0 +1,14 @@
+{
+  "$comment": "Promotion policy for the Airlock release gate. Fail closed: the gate blocks on anything missing, malformed, or unknown. Changes to this file are themselves a 'high' risk-tier change and require review per SECURITY-CONTROLS.md.",
+  "version": "0.1.0",
+  "minimum_test_count": 20,
+  "approvals_required": {
+    "elevated": 1,
+    "high": 2
+  },
+  "risk_tier_guidance": {
+    "standard": "Docs, corpus content, test-only changes. Full evidence set, no human approval.",
+    "elevated": "Application logic changes, dependency changes, prompt/tool changes. One named approver.",
+    "high": "Changes to the policy gate, release gate, provenance, workflow, or this policy file. Two named approvers."
+  }
+}
