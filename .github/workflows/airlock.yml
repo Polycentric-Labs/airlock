@@ -4,12 +4,15 @@
 #   - Third-party actions pinned to full commit SHAs, tag noted in a comment.
 #   - Default token permissions: contents:read. Jobs elevate individually.
 #   - Nothing privileged runs on pull_request (fork PRs get verify only).
+#   - Evidence is MEASURED, never asserted: scanners run and their exit codes
+#     are recorded into the manifest (scripts/collect_evidence.py).
+#   - Order: artifact -> SBOM -> evidence -> gate verdict -> provenance bound
+#     to the real verdict -> sign. Only a gated artifact reaches signing.
 #   - Signing identity comes from the workflow's OIDC token (keyless), never
 #     from a stored key. Deploy identity is Azure federated credentials (OIDC),
 #     never a stored cloud secret.
 #   - The deploy job is a TEMPLATE: it activates only after the Azure side of
-#     SECURITY-CONTROLS.md is configured (federated credential bound to this
-#     repo + environment). Until then it is skipped.
+#     SECURITY-CONTROLS.md is configured. Until then it skips cleanly.
 
 name: airlock
 
@@ -21,6 +24,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 
 jobs:
   verify:
@@ -36,58 +43,107 @@ jobs:
         run: python -m pytest -q
       - name: Static analysis (bandit)
         run: python -m bandit -r app scripts -q
-      - name: Dependency audit (pip-audit)
-        run: python -m pip_audit -r requirements-dev.txt
+      - name: Static analysis (semgrep, python ruleset)
+        run: |
+          python -m pip install --quiet semgrep
+          semgrep scan --config p/python --error --quiet
+      - name: Dependency audit (pip-audit, dev + deploy-time deps)
+        run: |
+          python -m pip_audit -r requirements-dev.txt
+          python -m pip_audit -r requirements-azure.txt
       - name: Secret scan (gitleaks, checksum-pinned binary)
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o gitleaks.tgz
-          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tgz" | sha256sum -c -
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tgz
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
           tar -xzf gitleaks.tgz gitleaks
           ./gitleaks detect --source . --config .gitleaks.toml --no-banner --redact
 
   build-sign-gate:
-    # Push events only: fork PRs must never reach signing.
+    # Push events only: fork PRs must never reach signing or attestation.
     if: github.event_name == 'push'
     needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # OIDC token for keyless signing; scoped to this job only
+      id-token: write      # OIDC for keyless signing; scoped to this job only
+      attestations: write  # GitHub-native build provenance (SLSA v1, ~Build L2)
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 2 # HEAD^ needed for changed-path risk-tier detection
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install dev tools
         run: python -m pip install -r requirements-dev.txt
-      - name: Build release candidate (artifact + provenance + manifest)
-        run: python scripts/build_release.py --commit "${GITHUB_SHA}" --builder "github-actions:${GITHUB_WORKFLOW_REF}" --evidence ci/evidence-ci.json
-      - name: SBOM (CycloneDX)
+
+      # --- Phase 1: the artifact exists first, so every later step can bind to it
+      - name: Build artifact
+        run: python scripts/build_release.py --artifact-only --commit "${GITHUB_SHA}"
+      - name: SBOM for the exact artifact (CycloneDX via syft)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           file: dist/airlock-app.zip
           format: cyclonedx-json
           output-file: dist/sbom.cdx.json
+
+      # --- Phase 2: measured evidence, detected tier, gate verdict, provenance
+      - name: Secret scan for evidence (gitleaks, checksum-pinned)
+        id: gitleaks
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tgz
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+          ./gitleaks detect --source . --config .gitleaks.toml --no-banner --redact
+      - name: Collect measured scanner evidence
+        run: |
+          python scripts/collect_evidence.py --out dist/evidence.json \
+            --gitleaks-result pass --gitleaks-version "gitleaks v${GITLEAKS_VERSION}"
+      - name: Detect risk tier from changed paths
+        id: tier
+        run: |
+          DETECTED=$(git diff --name-only HEAD^ HEAD 2>/dev/null | python scripts/derive_tier.py - || echo standard)
+          echo "detected=${DETECTED}" >> "$GITHUB_OUTPUT"
+          echo "detected risk tier: ${DETECTED}"
+      - name: Manifest, release gate (fail closed), provenance bound to the verdict
+        run: |
+          python scripts/build_release.py \
+            --commit "${GITHUB_SHA}" \
+            --builder "github-actions:${GITHUB_WORKFLOW_REF}" \
+            --evidence dist/evidence.json \
+            --sbom-file dist/sbom.cdx.json \
+            --detected-tier "${{ steps.tier.outputs.detected }}" \
+            --reuse-artifact
+
+      # --- Phase 3: only a gated artifact reaches attestation and signing
+      - name: GitHub-native build provenance (SLSA v1 predicate)
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: dist/airlock-app.zip
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-      - name: Keyless sign artifact + provenance (sigstore)
+      - name: Keyless sign artifact + attest policy binding (sigstore)
         run: |
+          # Artifact: plain blob signature.
           cosign sign-blob --yes dist/airlock-app.zip \
             --bundle dist/airlock-app.zip.sigstore.json
-          cosign sign-blob --yes dist/provenance.json \
-            --bundle dist/provenance.json.sigstore.json
-      - name: Verify signatures bind to THIS workflow identity
+          # Policy binding: a CUSTOM predicate (gate verdict + digests), signed
+          # as a DSSE-enveloped in-toto attestation over the artifact subject.
+          cosign attest-blob --yes dist/airlock-app.zip \
+            --predicate dist/policy-binding.predicate.json \
+            --type "https://polycentriclabs.com/airlock/provenance/v0.1" \
+            --bundle dist/policy-binding.attestation.sigstore.json
+      - name: Verify both bind to THIS workflow identity
         run: |
           cosign verify-blob dist/airlock-app.zip \
             --bundle dist/airlock-app.zip.sigstore.json \
-            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/" \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/airlock.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          cosign verify-blob dist/provenance.json \
-            --bundle dist/provenance.json.sigstore.json \
-            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/" \
+          cosign verify-blob-attestation dist/airlock-app.zip \
+            --bundle dist/policy-binding.attestation.sigstore.json \
+            --type "https://polycentriclabs.com/airlock/provenance/v0.1" \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/airlock.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
-      - name: Release gate (fail closed)
-        run: python -m app.release_gate dist/manifest.json
       - name: Upload release candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -108,6 +164,14 @@ jobs:
       contents: read
       id-token: write # OIDC for azure/login federated credential; no stored secrets
     steps:
+      - name: Download the gated, signed release candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-candidate
+          path: dist/
+      - name: Re-verify artifact digest before deploy
+        run: |
+          cd dist && sha256sum -c airlock-app.zip.sha256
       - name: Azure login (OIDC, no stored cloud secrets)
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
         with:
