@@ -31,10 +31,24 @@ production security platform. Known boundaries, stated plainly:
    statements are written and signed per release. Durable append-only
    storage, retention, and tamper-evident history are deployment concerns,
    deliberately not imitated here with a homegrown "immutable" log.
-8. **Scanners are representative, not exhaustive.** One SAST tool, one
-   secret scanner, one dependency auditor, chosen for legibility. A real
-   estate adds SCA depth, IaC scanning, and runtime posture in Defender for
-   Cloud or equivalent.
+8. **Scanners are representative, not exhaustive.** Semgrep and bandit for
+   SAST, gitleaks for secrets, pip-audit for dependencies, chosen for
+   legibility. A real estate adds SCA depth, IaC scanning, and runtime
+   posture in Defender for Cloud (AI security posture management) or
+   equivalent.
+9. **The SLSA claim, self-assessed honestly.** Build provenance comes from
+   GitHub's native artifact attestations: SLSA v1 provenance at **Build L2**
+   by default. Build L3 would require provenance generation isolated from
+   user-defined build steps (a trusted reusable workflow); this repo does
+   not claim it. The policy-binding attestation is a **custom predicate**,
+   DSSE-signed via `cosign attest-blob`; it is deliberately not labeled
+   SLSA provenance. slsa-github-generator was not used because the project
+   states it is no longer actively maintained.
+10. **The local SBOM is minimal CycloneDX 1.6.** CI regenerates it with
+    syft against the exact artifact. CycloneDX 1.7 is current; 1.6 is kept
+    for downstream tool compatibility, and neither yet carries an ML-BOM
+    entry for the model itself because the reference runs a deterministic
+    mock (the model component enters the SBOM when a real model does).
 
 ## What I would verify before production
 

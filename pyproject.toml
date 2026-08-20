@@ -1,16 +1,6 @@
-[project]
-name = "airlock-reference"
-version = "0.1.0"
-description = "A fail-closed promotion path for AI services: reference implementation."
-requires-python = ">=3.11"
-# Zero runtime dependencies by design. Dev tooling: requirements-dev.txt.
-dependencies = []
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Project-local temp root: hermetic regardless of the machine's shared
-# pytest temp state, and covered by .gitignore.
+# pytest temp state, and covered by .gitignore. (No [project] table on
+# purpose: this is a reference repo run with `python -m`, not a package.)
 addopts = "-p no:cacheprovider --basetemp=.pytest-tmp"
-
-[tool.bandit]
-targets = ["app", "scripts"]

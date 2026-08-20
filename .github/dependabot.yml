@@ -1,0 +1,13 @@
+# Automated update PRs for the two dependency surfaces this repo has:
+# the SHA-pinned GitHub Actions and the dev-tooling Python packages.
+# (The application itself has no third-party runtime dependencies.)
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly

@@ -7,10 +7,11 @@ model adds a key, an egress path, and nondeterministic tests while proving
 nothing new about the gate. Cost: the model-swap seam (`briefing._compose`)
 is asserted by design, not exercised.
 
-**Stdlib only at runtime.** Shortest possible SBOM, nothing to audit, and it
+**Stdlib only in the core.** Shortest possible SBOM, nothing to audit, and it
 forces the honest realization that most of this pattern is decisions and
-bindings, not frameworks. Cost: the local SBOM is minimal; CI regenerates a
-fuller one with syft.
+bindings, not frameworks. The one deploy-time exception is the Azure Functions
+host SDK for the thin adapter, listed separately and audited. Cost: the local
+SBOM is minimal; CI regenerates a fuller one with anchore/sbom-action (syft).
 
 **No warn state in the release gate.** Every seasoned reviewer has watched
 warnings become wallpaper. Cost: teams must triage blocks quickly or the
@@ -41,3 +42,17 @@ Cost: friction on legitimate gate improvements; that is the intended price.
 **GitHub Actions as the reference CI.** It is where the public repo lives
 and where keyless signing is most legible. Cost: an Azure DevOps translation
 is described, not shipped.
+
+**Native artifact attestations for build provenance; custom predicate only
+for the policy binding.** GitHub's `attest-build-provenance` yields standard
+SLSA v1 provenance (Build L2) verifiable with one `gh attestation verify`
+command, so inventing a homegrown SLSA statement would subtract credibility.
+What IS custom here, the gate-verdict binding, is signed as its own DSSE
+attestation via `cosign attest-blob` with an explicit non-SLSA predicate
+type. Cost: two attestation formats on one artifact, each labeled.
+
+**Evidence is measured, not asserted.** scripts/collect_evidence.py runs the
+scanners and records exit codes and versions; the old static evidence stub
+was deleted because a manifest that hardcodes "pass" is a gate in name only.
+Cost: scanners run twice in CI (once to fail the verify job fast, once to be
+recorded as evidence); that redundancy is cheaper than an unmeasured claim.

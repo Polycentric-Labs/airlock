@@ -1,0 +1,13 @@
+# Review routing for the paths that define what "passing" means.
+# In a team estate these entries point at a security-review group and are
+# enforced by branch protection requiring code-owner review. In this
+# single-maintainer reference the file documents the intended routing;
+# SECURITY.md and THREAT-MODEL.md state that honestly as a residual risk.
+
+/.github/workflows/       @allenfbyrd
+/gate/                    @allenfbyrd
+/app/policy_gate.py       @allenfbyrd
+/app/release_gate.py      @allenfbyrd
+/app/provenance.py        @allenfbyrd
+/scripts/                 @allenfbyrd
+/SECURITY-CONTROLS.md     @allenfbyrd

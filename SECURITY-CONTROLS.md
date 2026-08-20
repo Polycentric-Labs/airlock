@@ -45,15 +45,22 @@ unchecked until verified in the actual tenant and org settings.
 
 ## Identity note for AI agents (production path, not in this demo)
 
-In a production M365/Azure estate, the agent itself gets first-class
-identity: Microsoft Entra Agent ID is generally available for exactly this,
-so conditional access and lifecycle rules apply to agents like they do to
-people. This reference repo runs as a plain workload identity because a
-public demo has no tenant; the seam where Agent ID slots in is the Function
-App's runtime identity above.
+The deploy identity here is standard Microsoft Entra **workload identity
+federation** (OIDC, no client secrets, subject claims pinned to repo and
+environment). Separately, for agents themselves, Microsoft Entra Agent ID
+(generally available) can give an agent a first-class directory identity so
+conditional access and lifecycle rules apply to it; that is one optional
+component at the Function App's runtime-identity seam above, not a
+substitute for the federation, authorization, and egress controls on this
+page. A public demo has no tenant, so all of this is checklist, not claim.
 
 ## Change control for this file
 
 Edits to this document and to `gate/policy.json` are 'high' risk tier: two
 named approvals, because the quietest way to defeat a gate is to edit the
-definition of passing it.
+definition of passing it. **Single-maintainer honesty:** in this reference
+repo there is one human, so that requirement is enforced by policy tests and
+stated as residual risk (THREAT-MODEL.md, SECURITY.md), not simulated with a
+sock-puppet second approver. CI records the DETECTED risk tier of each change
+(scripts/derive_tier.py) so the mismatch between detected tier and available
+approvers is visible in the manifest instead of hidden.

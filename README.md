@@ -3,9 +3,11 @@
 **A fail-closed promotion path for AI services: from experimentation to
 production without trusting anyone's good day.**
 
-One claim, end to end: *an AI service cannot be promoted unless its source,
-dependencies, policy decision, and deploy identity meet explicit, verifiable
-controls, and every failure fails closed.*
+One claim, stated precisely: *within this reference workflow, an AI service
+is not promoted unless its source, dependencies, policy decision, and deploy
+identity meet explicit, verifiable controls, and every failure fails closed.
+The workflow is the decision layer; what makes it binding in a real estate is
+the platform configuration spelled out in [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md).*
 
 Teams building with AI are fast now. Vibe-coded prototypes become real
 products in days. The place organizations get hurt is not the prototype; it
@@ -62,38 +64,49 @@ flowchart LR
   [LIMITATIONS.md](LIMITATIONS.md) says plainly what is real, what is a
   template, and what only a tenant review can verify.
 
-## Run it (no keys, no cloud, no network needed)
+## The five-minute skeptic's path
+
+Nothing below requires keys, cloud, or trust in this README.
 
 ```bash
+# 1. Clean checkout reproduces the whole promotion path (tests -> artifact ->
+#    SBOM -> gate verdict -> policy-binding statement, verified from disk):
 pip install -r requirements-dev.txt
-python -m pytest -q                                    # 31 tests
+python -m pytest -q
 python scripts/build_release.py --commit $(git rev-parse HEAD)
-```
 
-The build runs the suite, produces the artifact, writes a CycloneDX SBOM and
-a provenance statement, verifies the bindings from disk, and asks the release
-gate for a verdict. Then watch it refuse:
-
-```bash
+# 2. Watch it refuse (exit nonzero, every reason listed):
 python -m app.release_gate examples/manifest-block-tampered.json    # digest mismatch
 python -m app.release_gate examples/manifest-block-high-tier.json   # missing second approver
+
+# 3. Verify what CI shipped, against CI's own identity (no local trust):
+gh attestation verify <downloaded airlock-app.zip> --repo Polycentric-Labs/airlock
+cosign verify-blob airlock-app.zip --bundle airlock-app.zip.sigstore.json \
+  --certificate-identity "https://github.com/Polycentric-Labs/airlock/.github/workflows/airlock.yml@refs/heads/main" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-Both exit nonzero with every reason listed. The tamper case also exists at
-the byte level: `tests/test_provenance.py` flips one byte of a signed-over
-artifact and shows verification fail.
+A successful verification proves the artifact came from this repository's
+`airlock.yml` workflow at a specific commit. It proves origin, never safety;
+that distinction is load-bearing and repeated wherever signing is mentioned.
+The tamper case also exists at the byte level: `tests/test_provenance.py`
+flips one byte of an attested artifact and shows verification fail.
 
 ## Design positions (the part that is actually about security)
 
 1. **Fail closed, no warn state.** Warnings in a promotion path decay into
    wallpaper. Anything missing, malformed, or unknown is a block with a
    reason.
-2. **Zero runtime dependencies.** The application is Python stdlib. The SBOM
-   is short because the attack surface is short. Dev tooling is separate and
-   audited.
-3. **Bind, then sign.** Digests bind artifact to commit to policy verdict
-   before anything is signed, so a signature covers a specific, reconstructable
-   claim. A signature proves workflow identity, never code safety.
+2. **No third-party runtime dependencies.** The service and gate code are
+   Python stdlib (the Azure Functions host SDK is the deploy-time exception,
+   listed separately). The SBOM is short because the attack surface is short.
+   Dev tooling is separate and audited.
+3. **Gate, bind, then sign.** The release gate rules on measured evidence
+   first; the policy-binding statement then binds artifact digest to commit
+   to the REAL verdict; only then is anything signed. Build provenance comes
+   from GitHub's native artifact attestations (SLSA v1 provenance, Build L2
+   by default; L3 would require reusable-workflow isolation). A signature
+   proves workflow identity, never code safety.
 4. **Humans scale with risk.** Standard changes flow. Elevated changes take a
    named person. Changes to the gate itself take two, because the quietest
    attack is editing the definition of passing.
@@ -113,9 +126,11 @@ map data flows, identities, tools, and deploy paths (days 1 to 3); stand up
 the minimum promotion gate on the first service and get one real release
 through it (days 3 to 6); threat-model the highest-risk workflow with the
 team, not at them (days 6 to 8); wire evidence generation into CI so the gate
-stops being advisory (days 8 to 10); leave behind a one-page exception path
-with expiry dates, because a gate without a legible exception path gets
-bypassed, not respected.
+stops being advisory (days 8 to 10); leave behind a one-page exception path,
+because a gate without a legible exception path gets bypassed, not respected.
+An exception here means an audited policy state, not a bypass: a named
+approver, a written reason, a hard expiry date, and the exception itself
+recorded in the release evidence so it shows up in the audit trail.
 
 ## Portability
 
@@ -129,8 +144,9 @@ are plain Python and do not care who runs them.
 
 Built AI-assisted in a compressed window, the same acceleration pattern most
 AI teams use now, with the controls applied to the acceleration itself: scope
-cut deliberately small, every module reviewed, 31 tests written and green,
-scanners run locally, limitations documented instead of discovered. The
+cut deliberately small, every module reviewed, the test suite (rejection and
+tamper cases included) written and green, scanners run in CI on every push,
+limitations documented instead of discovered. The
 deeper, slower record of the same discipline is public:
 [Evidentia](https://github.com/Polycentric-Labs/evidentia) (open-source GRC
 platform: signed evidence, SBOM, Sigstore, 4,900+ tests),
