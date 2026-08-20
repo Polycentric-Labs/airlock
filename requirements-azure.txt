@@ -1,2 +1,2 @@
 # Installed only by the Azure Functions host at deploy time.
-azure-functions>=1.20
+azure-functions>=2.2.0
