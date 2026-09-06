@@ -158,3 +158,9 @@ guardrail that decides before a model speaks).
 ## License
 
 Apache-2.0
+
+## AI Assistance
+
+This project was developed alongside AI platforms.
+
+Details, including the tools used: [`docs/ai-assistance.md`](docs/ai-assistance.md).
