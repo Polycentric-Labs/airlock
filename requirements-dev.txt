@@ -3,5 +3,5 @@
 # the SBOM for the artifact is short, and the dependency audit has almost
 # nothing to audit. requirements-azure.txt exists solely for the Functions host.
 pytest>=8.0
-bandit>=1.7
+bandit>=1.9.4
 pip-audit>=2.7
