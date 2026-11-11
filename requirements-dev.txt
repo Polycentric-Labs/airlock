@@ -4,4 +4,4 @@
 # nothing to audit. requirements-azure.txt exists solely for the Functions host.
 pytest>=8.0
 bandit>=1.7
-pip-audit>=2.7
+pip-audit>=2.10.1
