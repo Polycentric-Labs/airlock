@@ -33,7 +33,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
@@ -68,7 +68,7 @@ jobs:
       id-token: write      # OIDC for keyless signing; scoped to this job only
       attestations: write  # GitHub-native build provenance (SLSA v1, ~Build L2)
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2 # HEAD^ needed for changed-path risk-tier detection
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
